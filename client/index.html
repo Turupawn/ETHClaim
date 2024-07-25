@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ETH Claim</title>
+</head>
+<body>
+    <h1>ETH Claim</h1>
+    <button id="connectButton">Connect Wallet</button>
+    <button id="signButton" disabled>Sign Message and Claim</button>
+    <p id="status"></p>
+
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.6.1/dist/web3.min.js"></script>
+    <script>
+        const connectButton = document.getElementById('connectButton');
+        const signButton = document.getElementById('signButton');
+        const status = document.getElementById('status');
+        let web3;
+        let accounts;
+        let wallets = [];
+
+        const txContractAddress = '0xbADE0cbDC8356c64577Cea5b0E2c260CF9f4E770';
+        const txABI = [
+            {
+                "constant": true,
+                "inputs": [{"name": "beneficiary", "type": "address"}],
+                "name": "claimed",
+                "outputs": [{"name": "", "type": "bool"}],
+                "payable": false,
+                "stateMutability": "view",
+                "type": "function"
+            }
+        ];
+
+        async function fetchWallets() {
+            const response = await fetch('wallets.json');
+            wallets = await response.json();
+        }
+
+        async function hasClaimed(address) {
+            const contract = new web3.eth.Contract(txABI, txContractAddress);
+            return await contract.methods.claimed(address).call();
+        }
+
+        fetchWallets();
+
+        connectButton.onclick = async () => {
+            if (typeof window.ethereum !== 'undefined' || typeof window.web3 !== 'undefined') {
+                web3 = new Web3(window.ethereum || window.web3.currentProvider);
+                try {
+                    await window.ethereum.request({ method: 'eth_requestAccounts' });
+                    accounts = await web3.eth.getAccounts();
+                    signButton.disabled = false;
+                    status.textContent = 'Wallet connected';
+                } catch (error) {
+                    console.error(error);
+                    status.textContent = 'Connection failed';
+                }
+            } else {
+                status.textContent = 'Please install MetaMask';
+            }
+        };
+
+        signButton.onclick = async () => {
+            const address = accounts[0].toLowerCase();
+
+            if (!wallets.includes(address)) {
+                status.textContent = 'Address not in whitelist';
+                return;
+            }
+
+            if (await hasClaimed(address)) {
+                status.textContent = 'Already claimed';
+                return;
+            }
+
+            const message = "Quiero el claim de Ethereum Argentina";
+            try {
+                const signature = await web3.eth.personal.sign(message, address);
+
+                const response = await fetch('http://localhost:3000/send', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ signature })
+                });
+
+                if (response.ok) {
+                    status.textContent = `Transaction claimed by ${address}`;
+                } else {
+                    const error = await response.text();
+                    status.textContent = `Transaction failed: ${error}`;
+                }
+            } catch (error) {
+                console.error(error);
+                status.textContent = `Error: ${error.message}`;
+            }
+        };
+    </script>
+</body>
+</html>
